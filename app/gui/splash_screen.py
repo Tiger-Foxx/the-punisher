@@ -156,14 +156,15 @@ class SplashScreen:
         try:
             logo_path = Path(PUNISHER_LOGO_WHITE_PATH)
             if logo_path.exists():
-                # Charger l'image
+                # Charger l'image avec CTkImage (pour HighDPI)
                 pil_image = Image.open(logo_path)
                 
-                # Redimensionner
-                pil_image = pil_image.resize((80, 80), Image.Resampling.LANCZOS)
-                
-                # Convertir pour tkinter
-                self.logo_image = ImageTk.PhotoImage(pil_image)
+                # Créer un CTkImage au lieu de ImageTk.PhotoImage
+                self.logo_image = ctk.CTkImage(
+                    light_image=pil_image,
+                    dark_image=pil_image,
+                    size=(80, 80)
+                )
                 
                 # Afficher le logo
                 self.logo_label = ctk.CTkLabel(

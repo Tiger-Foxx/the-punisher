@@ -377,11 +377,18 @@ class NetworkScanner:
         try:
             start_time = time.time()
             
-            # Créer la requête ARP
+            # Créer la requête ARP avec plus de détails
             arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(op="who-has", pdst=target_ip)
             
-            # Envoyer et recevoir
-            answered, _ = scapy.srp(arp_request, timeout=self.scan_timeout, verbose=False, iface=self.interface.interface)
+            # Utiliser srp avec plus d'options pour Windows
+            answered, _ = scapy.srp(
+                arp_request, 
+                timeout=self.scan_timeout, 
+                verbose=False, 
+                iface=self.interface.interface,
+                retry=1,
+                inter=0.1
+            )
             
             if answered:
                 # Réponse reçue
@@ -400,6 +407,8 @@ class NetworkScanner:
                 os_guess = ""
                 if self.deep_scan_enabled:
                     os_guess = self._detect_os(target_ip, mac_address)
+                
+                self.logger.debug(f"Appareil trouvé: {target_ip} -> {mac_address} ({vendor})")
                 
                 return ScanResult(
                     ip=target_ip,
