@@ -4,3 +4,5 @@ app/__pycache__
 app/__pycache__/*
 logs/
 *.log
+app/core/__pycache__/
+*/__pycache__/
