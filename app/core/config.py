@@ -74,7 +74,7 @@ class AppConfig:
     security: SecurityConfig
     version: str = "1.0.0"
     app_name: str = "NetworkController"
-    author: str = "theTigerFox"
+    author: str = "The Fox"
     
     @classmethod
     def default(cls) -> 'AppConfig':
@@ -255,7 +255,7 @@ def save_config() -> bool:
 # Constantes de l'application
 APP_NAME = "NetworkController"
 APP_VERSION = "1.0.0"
-APP_AUTHOR = "theTigerFox"
+APP_AUTHOR = "The Fox"
 APP_DESCRIPTION = "Contrôleur de réseau avancé avec interface moderne"
 
 # Constantes réseau

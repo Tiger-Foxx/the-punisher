@@ -182,7 +182,7 @@ Cache avec expiration automatique pour optimiser les performances.
 ### Application
 - `APP_NAME` : "NetworkController"
 - `APP_VERSION` : "1.0.0"
-- `APP_AUTHOR` : "theTigerFox"
+- `APP_AUTHOR` : "The Fox"
 - `APP_DESCRIPTION` : "Contrôleur de réseau avancé avec interface moderne"
 
 ### Réseau

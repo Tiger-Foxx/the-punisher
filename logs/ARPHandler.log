@@ -1,0 +1,2 @@
+2025-08-01 11:35:21,222 - ARPHandler - DEBUG - Erreur lors de la récupération MAC pour 192.168.100.20: Interface '{F3F334F4-AED9-469E-8A09-04D3166D720D}' not found !
+2025-08-01 11:35:21,222 - ARPHandler - WARNING - Impossible de récupérer la MAC de la gateway
