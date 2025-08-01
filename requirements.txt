@@ -1,0 +1,62 @@
+# === INTERFACE GRAPHIQUE MODERNE ===
+# CustomTkinter pour interface moderne et dark theme
+customtkinter
+# Pillow pour gestion d'images et icônes
+pillow
+# tkinter (inclus avec Python mais on le liste)
+tk
+
+# === RÉSEAU ET SÉCURITÉ ===
+# Scapy pour manipulation de paquets réseau
+scapy
+# PSUtil pour informations système et réseau
+psutil
+# Netifaces pour détection des interfaces réseau
+netifaces
+# Python-nmap pour scans réseau avancés
+python-nmap
+# Requests pour requêtes HTTP (infos appareils)
+requests
+# Socket pour communications réseau bas niveau
+# (inclus avec Python)
+
+# === ANALYSE ET MONITORING ===
+# Speedtest pour tests de bande passante
+speedtest-cli
+# Netaddr pour manipulation d'adresses réseau
+netaddr
+# IPy pour gestion des adresses IP
+ipy
+
+# === THREADS ET PERFORMANCE ===
+# Threading (inclus avec Python)
+# Multiprocessing (inclus avec Python)
+# Asyncio pour programmation asynchrone
+# (inclus avec Python)
+
+# === UTILITAIRES SYSTÈME ===
+# OS et sys (inclus avec Python)
+# Subprocess pour exécution de commandes
+# (inclus avec Python)
+# Datetime (inclus avec Python)
+# JSON (inclus avec Python)
+
+# === LOGGING ET DEBUG ===
+# Logging (inclus avec Python)
+# Traceback (inclus avec Python)
+
+# === PACKAGING FINAL ===
+# PyInstaller pour créer l'exécutable
+pyinstaller
+# Auto-py-to-exe pour interface graphique de packaging
+auto-py-to-exe
+# Cx-Freeze alternative à PyInstaller
+cx-freeze
+
+# === DÉVELOPPEMENT ===
+# Pytest pour tests unitaires
+pytest
+# Black pour formatage de code
+black
+# Flake8 pour vérification de style
+flake8
