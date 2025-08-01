@@ -49,6 +49,12 @@ class NetworkAdapter:
         return NetworkUtils.get_network_range(self.ip, self.netmask)
     
     @property
+    def is_gateway(self) -> bool:
+        """Vérifie si cette interface est configurée comme passerelle"""
+        # Vérifier si l'IP de l'interface correspond à une passerelle courante
+        return self.ip == self.gateway or self.ip.endswith('.1')
+    
+    @property
     def is_suitable_for_attack(self) -> bool:
         """Vérifie si l'interface est adaptée pour les attaques réseau"""
         return (
