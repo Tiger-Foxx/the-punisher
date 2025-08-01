@@ -76,12 +76,44 @@ def show_startup_info():
     logger.info(f"Python: {system_info['python_version']}")
     logger.info(f"Admin privileges: {'Yes' if SystemUtils.is_admin() else 'No'}")
 
+def request_admin_if_needed():
+    """Demande les privilèges admin si nécessaire (Windows)"""
+    if os.name == 'nt' and not SystemUtils.is_admin():
+        logger = get_app_logger("AdminRequest")
+        
+        print("⚠️  Privilèges administrateur requis pour un fonctionnement optimal")
+        print("🔄 Tentative de relancement en mode administrateur...")
+        
+        try:
+            import ctypes
+            # Relancer le script avec des privilèges admin
+            ctypes.windll.shell32.ShellExecuteW(
+                None, 
+                "runas", 
+                sys.executable, 
+                f'"{" ".join(sys.argv)}"',
+                None, 
+                1
+            )
+            logger.info("Relancement en mode administrateur demandé")
+            return False  # Arrêter l'instance actuelle
+        except Exception as e:
+            logger.warning(f"Impossible de relancer en admin: {e}")
+            print("❌ Impossible de relancer automatiquement en mode administrateur")
+            print("📝 Veuillez utiliser run_as_admin.bat ou lancer manuellement en admin")
+            return True  # Continuer quand même
+    
+    return True  # Déjà admin ou pas Windows
 
 def main():
     """Point d'entrée principal de l'application"""
     
     # Afficher les informations de démarrage
     show_startup_info()
+    
+    # Demander admin si nécessaire
+    if not request_admin_if_needed():
+        return  # Arrêter si relancement en admin
     
     # Vérifier les prérequis
     if not check_requirements():
@@ -91,6 +123,19 @@ def main():
     
     logger = get_app_logger("Main")
     config = get_config()
+    
+    # Avertissement si pas admin
+    if not SystemUtils.is_admin():
+        print("⚠️  ATTENTION: Application lancée sans privilèges administrateur")
+        print("💡 Certaines fonctionnalités peuvent ne pas fonctionner correctement")
+        print("🎯 Utilisez run_as_admin.bat pour un fonctionnement optimal")
+        print()
+        
+        # Demander confirmation
+        response = input("Continuer quand même ? (y/N): ").lower().strip()
+        if response not in ['y', 'yes', 'o', 'oui']:
+            print("💀 The Punisher needs more power... 💀")
+            return
     
     try:
         # Variable pour la fenêtre principale
