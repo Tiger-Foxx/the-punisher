@@ -60,3 +60,4 @@ pytest
 black
 # Flake8 pour vérification de style
 flake8
+pywin32
