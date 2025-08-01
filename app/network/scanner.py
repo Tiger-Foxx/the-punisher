@@ -350,48 +350,54 @@ class NetworkScanner:
         self.on_device_updated: Optional[Callable[[NetworkDevice], None]] = None
         self.on_device_lost: Optional[Callable[[NetworkDevice], None]] = None
         self.on_scan_complete: Optional[Callable[[List[NetworkDevice]], None]] = None
-        self.on_scan_progress: Optional[Callable[[int, int], None]] = None  # (current, total)
+        self.on_scan_progress: Optional[Callable[[int, int], None]] = None
         
-        # Configuration de scan
-        self.scan_timeout = 3.0
-        self.max_threads = 50
-        self.scan_interval = 5.0
-        self.offline_timeout = 30.0  # secondes avant de considérer un appareil hors ligne
-        self.deep_scan_enabled = True  # Scan approfondi avec OS detection
+        # Configuration de scan AMÉLIORÉE
+        self.scan_timeout = 5.0  # Augmenté pour Windows
+        self.max_threads = 20   # Réduit pour éviter la surcharge
+        self.scan_interval = 10.0  # Augmenté entre les scans
+        self.offline_timeout = 60.0  # Plus de temps avant de marquer offline
+        self.deep_scan_enabled = True
         
-        # Rate limiting
-        self.rate_limiter = RateLimiter(max_calls=100, time_window=1.0)
+        # Rate limiting plus permissif
+        self.rate_limiter = RateLimiter(max_calls=50, time_window=1.0)
         
         # Statistiques
         self.total_scans = ThreadSafeCounter()
         self.successful_scans = ThreadSafeCounter()
         self.scan_start_time = 0.0
         self.last_scan_duration = 0.0
-    
-    @retry(max_attempts=3, delay=0.5)
+        
+        # Log de démarrage
+        self.logger.info(f"Scanner initialisé pour {interface.ip} (Gateway: {interface.gateway})")
+        self.logger.info(f"Plage réseau: {len(interface.network_range)} adresses à scanner")
+
+    @retry(max_attempts=2, delay=1.0)
     def _arp_ping(self, target_ip: str) -> Optional[ScanResult]:
         """Effectue un ping ARP vers une IP cible"""
-        if not self.rate_limiter.can_proceed():
-            time.sleep(self.rate_limiter.wait_time())
-        
         try:
             start_time = time.time()
             
-            # Créer la requête ARP avec plus de détails
-            arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(op="who-has", pdst=target_ip)
+            # Créer la requête ARP avec options spécifiques pour Windows
+            arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(
+                op="who-has", 
+                pdst=target_ip,
+                hwsrc=self.interface.mac,  # Utiliser notre MAC
+                psrc=self.interface.ip     # Utiliser notre IP
+            )
             
-            # Utiliser srp avec plus d'options pour Windows
+            # Configuration spéciale pour Windows
             answered, _ = scapy.srp(
-                arp_request, 
-                timeout=self.scan_timeout, 
-                verbose=False, 
+                arp_request,
+                timeout=self.scan_timeout,
+                verbose=False,
                 iface=self.interface.interface,
-                retry=1,
-                inter=0.1
+                retry=0,
+                inter=0.2,
+                chainCC=True
             )
             
             if answered:
-                # Réponse reçue
                 response_time = time.time() - start_time
                 response = answered[0][1]
                 
@@ -399,16 +405,16 @@ class NetworkScanner:
                 hostname = self._resolve_hostname(target_ip)
                 is_gateway = (target_ip == self.interface.gateway)
                 
-                # Récupérer les informations vendor depuis la base OUI
+                # Récupérer les informations vendor
                 vendor_info = self.oui_db.get_vendor_info(mac_address)
                 vendor = vendor_info.get("organization", "Unknown Vendor")
                 
-                # OS detection si activé
+                # OS detection simple
                 os_guess = ""
                 if self.deep_scan_enabled:
                     os_guess = self._detect_os(target_ip, mac_address)
                 
-                self.logger.debug(f"Appareil trouvé: {target_ip} -> {mac_address} ({vendor})")
+                self.logger.info(f"✅ Appareil trouvé: {target_ip} -> {mac_address} ({vendor})")
                 
                 return ScanResult(
                     ip=target_ip,
@@ -419,12 +425,79 @@ class NetworkScanner:
                     vendor=vendor,
                     os_guess=os_guess
                 )
+            else:
+                # Essayer un ping ICMP en fallback
+                if NetworkUtils.ping(target_ip, timeout=2.0):
+                    self.logger.debug(f"🔍 {target_ip} répond au ping ICMP mais pas ARP")
         
         except Exception as e:
-            self.logger.debug(f"Erreur ARP ping pour {target_ip}: {e}")
+            self.logger.debug(f"❌ Erreur ARP ping pour {target_ip}: {e}")
         
         return None
-    
+
+    def scan_network(self) -> List[NetworkDevice]:
+        """Effectue un scan complet du réseau"""
+        self.scan_start_time = time.time()
+        self.logger.info(f"🔍 Démarrage du scan réseau sur {self.interface.ip}")
+        
+        # Générer la liste des IPs à scanner
+        ip_range = self.interface.network_range
+        if not ip_range:
+            self.logger.error("❌ Impossible de déterminer la plage d'adresses réseau")
+            return []
+        
+        # Ajouter toujours notre IP et la gateway
+        essential_ips = [self.interface.ip]
+        if self.interface.gateway and self.interface.gateway not in essential_ips:
+            essential_ips.append(self.interface.gateway)
+        
+        # Scanner d'abord les IPs essentielles
+        self.logger.info(f"🎯 Scan prioritaire de {len(essential_ips)} adresses essentielles")
+        essential_results = self._scan_ip_range(essential_ips)
+        
+        # Puis scanner toute la plage
+        self.logger.info(f"🌐 Scan complet de {len(ip_range)} adresses IP")
+        all_results = self._scan_ip_range(ip_range)
+        
+        # Combiner les résultats (éviter les doublons)
+        all_ips = set()
+        combined_results = []
+        
+        for result in essential_results + all_results:
+            if result.ip not in all_ips:
+                combined_results.append(result)
+                all_ips.add(result.ip)
+        
+        # Mettre à jour les appareils découverts
+        discovered_devices = []
+        for result in combined_results:
+            device = self._update_or_create_device(result)
+            discovered_devices.append(device)
+        
+        # Marquer les appareils non vus comme potentiellement hors ligne
+        self._check_offline_devices()
+        
+        # Identifier la machine locale
+        self._identify_local_machine()
+        
+        # Mettre à jour les types d'appareils
+        for device in self.devices.values():
+            if not device.device_type:
+                device.device_type = device.guess_device_type()
+        
+        self.last_scan_duration = time.time() - self.scan_start_time
+        self.logger.info(f"✅ Scan terminé en {self.last_scan_duration:.2f}s: {len(discovered_devices)} appareils trouvés")
+        
+        # Log détaillé des appareils trouvés
+        for device in discovered_devices:
+            self.logger.info(f"  📱 {device.ip} - {device.mac} - {device.vendor} - {device.device_type}")
+        
+        # Callback de fin de scan
+        if self.on_scan_complete:
+            self.on_scan_complete(list(self.devices.values()))
+        
+        return discovered_devices
+
     @timed_cache(300)  # Cache pendant 5 minutes
     def _resolve_hostname(self, ip: str) -> str:
         """Résout le nom d'hôte d'une IP"""

@@ -69,13 +69,6 @@ class NetworkAdapter:
 class NetworkInterfaceManager:
     """Gestionnaire des interfaces réseau"""
     
-    def __init__(self):
-        self.logger = get_app_logger("NetworkInterfaces")
-        self._interfaces_cache = None
-        self._cache_timestamp = 0
-        self._cache_duration = 30  # secondes
-    
-    @timed_cache(30)
     def get_all_interfaces(self) -> List[NetworkAdapter]:
         """Récupère toutes les interfaces réseau disponibles"""
         interfaces = []
@@ -83,16 +76,86 @@ class NetworkInterfaceManager:
         try:
             # Utiliser netifaces pour la détection d'interfaces
             for interface_name in netifaces.interfaces():
+                # Ignorer l'interface de loopback
+                if interface_name.lower().startswith('loopback') or interface_name == 'lo':
+                    continue
+                
                 adapter = self._create_adapter_from_interface(interface_name)
-                if adapter:
+                if adapter and adapter.ip != "127.0.0.1":  # Exclure localhost
                     interfaces.append(adapter)
                     
         except Exception as e:
             self.logger.error(f"Erreur lors de la récupération des interfaces: {e}")
         
-        # Trier par priorité (actives en premier, puis par nom)
-        interfaces.sort(key=lambda x: (not x.is_active, x.name))
+        # Trier par priorité (Ethernet d'abord, puis WiFi, puis autres)
+        def interface_priority(interface):
+            name_lower = interface.name.lower()
+            if 'ethernet' in name_lower or 'eth' in name_lower:
+                return 1  # Ethernet en premier
+            elif 'wi-fi' in name_lower or 'wifi' in name_lower or 'wlan' in name_lower:
+                return 2  # WiFi en second
+            else:
+                return 3  # Autres en dernier
+        
+        interfaces.sort(key=lambda x: (not x.is_active, interface_priority(x), x.name))
         return interfaces
+    
+    def _is_wireless_interface(self, interface_name: str) -> bool:
+        """Détermine si une interface est sans fil"""
+        wireless_indicators = ['wifi', 'wlan', 'wireless', 'wi-fi', '802.11', 'wl']
+        interface_lower = interface_name.lower()
+        
+        # Vérifier le nom de l'interface
+        for indicator in wireless_indicators:
+            if indicator in interface_lower:
+                return True
+        
+        # Sur Windows, vérifier via WMI si possible
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['netsh', 'interface', 'show', 'interface', interface_name],
+                capture_output=True, text=True, timeout=5
+            )
+            if 'wireless' in result.stdout.lower() or 'wi-fi' in result.stdout.lower():
+                return True
+        except Exception:
+            pass
+        
+        return False
+    
+    def _get_interface_description(self, interface_name: str) -> str:
+        """Récupère la description d'une interface"""
+        try:
+            # Sur Windows, utiliser netsh pour obtenir des informations détaillées
+            if os.name == 'nt':
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['netsh', 'interface', 'show', 'interface', interface_name],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if 'Description' in line or 'Name' in line:
+                            parts = line.split(':', 1)
+                            if len(parts) > 1:
+                                desc = parts[1].strip()
+                                if desc and desc != interface_name:
+                                    return desc
+                except Exception:
+                    pass
+            
+            # Description par défaut basée sur le nom
+            if 'ethernet' in interface_name.lower():
+                return "Ethernet Connection"
+            elif any(x in interface_name.lower() for x in ['wifi', 'wlan', 'wireless']):
+                return "Wi-Fi Adapter"
+            else:
+                return interface_name
+            
+        except Exception:
+            return interface_name
     
     def _create_adapter_from_interface(self, interface_name: str) -> Optional[NetworkAdapter]:
         """Crée un NetworkAdapter à partir d'un nom d'interface"""

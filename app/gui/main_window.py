@@ -44,10 +44,11 @@ class NetworkControllerMainWindow:
         self.root.geometry(f"{self.config.ui.window_width}x{self.config.ui.window_height}")
         self.root.minsize(1000, 700)
         
-        # Configuration de la fenêtre
+        # IMPORTANT: Créer l'interface AVANT d'initialiser le réseau
         self._setup_window()
+        self._create_interface()
         
-        # Variables d'état
+        # Variables d'état (APRÈS la création de l'interface)
         self.current_interface: Optional[NetworkAdapter] = None
         self.network_scanner = None
         self.arp_handler = None
@@ -63,14 +64,11 @@ class NetworkControllerMainWindow:
         self.discovered_devices: Dict[str, NetworkDevice] = {}
         self.attack_sessions = {}
         
-        # Interface utilisateur
-        self._create_interface()
-        
         # Timers et threads
         self.stats_update_timer = None
         self.auto_scan_timer = None
         
-        # Initialisation
+        # Initialisation APRÈS que l'interface soit créée
         self._initialize_network()
         self._start_timers()
         
@@ -612,11 +610,20 @@ class NetworkControllerMainWindow:
             interface_options = []
             
             for interface in interfaces:
-                option = f"{interface.name} ({interface.ip})"
+                # Format: "Nom descriptif (IP) [Type]"
+                desc = interface.description or interface.name
+                option = f"{desc} ({interface.ip})"
+                
+                # Ajouter des indicateurs de type
                 if interface.is_wireless:
                     option += " [WiFi]"
-                if interface.is_gateway:
-                    option += " [Gateway]"
+                else:
+                    option += " [Ethernet]"
+                
+                # Ajouter un indicateur si c'est l'interface par défaut
+                if interface.gateway and interface.gateway != "0.0.0.0":
+                    option += " [Default Gateway]"
+                
                 interface_options.append(option)
             
             self.interface_combo.configure(values=interface_options)
@@ -627,10 +634,37 @@ class NetworkControllerMainWindow:
             
             self.logger.info(f"Interfaces rafraîchies: {len(interfaces)} trouvées")
             
+            # Log des interfaces trouvées pour debug
+            for i, interface in enumerate(interfaces):
+                self.logger.debug(f"Interface {i+1}: {interface.name} - {interface.ip} - Active: {interface.is_active}")
+            
         except Exception as e:
             self.logger.error(f"Erreur lors du rafraîchissement des interfaces: {e}")
             messagebox.showerror("Interface Error", f"Failed to refresh interfaces:\n{e}")
     
+    def _on_interface_changed(self, selection):
+        """Callback de changement d'interface"""
+        try:
+            # Extraire l'IP de la sélection (format: "Description (IP) [Type]")
+            import re
+            ip_match = re.search(r'\(([0-9.]+)\)', selection)
+            if not ip_match:
+                self.logger.error(f"Impossible d'extraire l'IP de: {selection}")
+                return
+            
+            target_ip = ip_match.group(1)
+            
+            # Trouver l'interface correspondante
+            interfaces = get_suitable_interfaces()
+            for interface in interfaces:
+                if interface.ip == target_ip:
+                    self._setup_network_modules(interface)
+                    break
+            else:
+                self.logger.error(f"Interface avec IP {target_ip} non trouvée")
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors du changement d'interface: {e}")
     def _on_interface_changed(self, selection):
         """Callback de changement d'interface"""
         try:
@@ -674,12 +708,20 @@ class NetworkControllerMainWindow:
     def _start_network_scan(self):
         """Démarre le scan réseau"""
         try:
+            if self.scanning:
+                self.logger.warning("Scan déjà en cours, ignoré")
+                return
+            
             self.scanning = True
             self.scan_button.configure(text="⏹️ Stop Scanning", fg_color=DARK_THEME['error_color'])
             self.scan_indicator.configure(text="🟢 Scan", text_color=DARK_THEME['success_color'])
             
-            # Démarrer le scan en arrière-plan
-            threading.Thread(target=self._perform_network_scan, daemon=True).start()
+            # Effacer les anciens appareils
+            self.device_list.clear_devices()
+            self.discovered_devices.clear()
+            
+            # Démarrer UN SEUL scan en arrière-plan
+            threading.Thread(target=self._perform_single_network_scan, daemon=True).start()
             
             self._update_status("Network scan started...")
             self.log_viewer.add_log("INFO", "Network scan started")
@@ -687,6 +729,50 @@ class NetworkControllerMainWindow:
         except Exception as e:
             self.logger.error(f"Erreur lors du démarrage du scan: {e}")
             messagebox.showerror("Scan Error", f"Failed to start network scan:\n{e}")
+            self.scanning = False
+    
+    def _perform_single_network_scan(self):
+        """Effectue UN SEUL scan réseau (thread séparé)"""
+        try:
+            if self.network_scanner and not self.network_scanner.scanning:
+                # Faire un scan unique au lieu d'un scan continu
+                devices = self.network_scanner.scan_network()
+                
+                # Traiter les résultats dans le thread principal
+                self.root.after(0, lambda: self._on_single_scan_complete(devices))
+                
+        except Exception as e:
+            self.logger.error(f"Erreur lors du scan réseau: {e}")
+            self.root.after(0, lambda: self._on_scan_error(str(e)))
+    
+    def _on_single_scan_complete(self, devices: List[NetworkDevice]):
+        """Callback de fin de scan unique"""
+        try:
+            self.scanning = False
+            self.scan_button.configure(text="🔍 Start Network Scan", fg_color=DARK_THEME['success_color'])
+            self.scan_indicator.configure(text="⚫ Scan", text_color=DARK_THEME['fg_color'])
+            
+            device_count = len([d for d in devices if d.is_online])
+            self._update_status(f"Scan terminé - {device_count} appareils trouvés")
+            
+            # Ajouter les appareils à l'interface
+            for device in devices:
+                self._handle_device_discovered(device)
+            
+            self.log_viewer.add_log("INFO", f"Scan terminé: {device_count} appareils découverts")
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors du traitement de fin de scan: {e}")
+    
+    def _on_scan_error(self, error_message: str):
+        """Callback d'erreur de scan"""
+        self.scanning = False
+        self.scan_button.configure(text="🔍 Start Network Scan", fg_color=DARK_THEME['success_color'])
+        self.scan_indicator.configure(text="⚫ Scan", text_color=DARK_THEME['fg_color'])
+        
+        self._update_status("Scan failed")
+        self.log_viewer.add_log("ERROR", f"Scan failed: {error_message}")
+        messagebox.showerror("Scan Error", f"Network scan failed:\n{error_message}")
     
     def _stop_network_scan(self):
         """Arrête le scan réseau"""
