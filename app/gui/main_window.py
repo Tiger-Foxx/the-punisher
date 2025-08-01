@@ -494,6 +494,8 @@ class NetworkControllerMainWindow:
             
         except Exception as e:
             self.logger.error(f"Erreur lors de l'initialisation réseau: {e}")
+            if hasattr(self, 'status_var'):
+                self._update_status(f"Erreur d'initialisation réseau: {e}")
             messagebox.showerror("Network Error", f"Failed to initialize network modules:\n{e}")
     
     def _setup_network_modules(self, interface: NetworkAdapter):
@@ -512,12 +514,15 @@ class NetworkControllerMainWindow:
             
             # Mettre à jour l'interface
             self._update_interface_info()
-            self._update_status(f"Interface configured: {interface.name}")
+            if hasattr(self, 'status_var'):
+                self._update_status(f"Interface configured: {interface.name}")
             
             self.logger.info(f"Modules réseau configurés pour {interface.name}")
             
         except Exception as e:
             self.logger.error(f"Erreur lors de la configuration des modules: {e}")
+            if hasattr(self, 'status_var'):
+                self._update_status(f"Erreur de configuration: {e}")
             messagebox.showerror("Configuration Error", f"Failed to setup network modules:\n{e}")
     
     def _setup_callbacks(self):
@@ -662,21 +667,6 @@ class NetworkControllerMainWindow:
                     break
             else:
                 self.logger.error(f"Interface avec IP {target_ip} non trouvée")
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors du changement d'interface: {e}")
-    def _on_interface_changed(self, selection):
-        """Callback de changement d'interface"""
-        try:
-            # Extraire le nom de l'interface
-            interface_name = selection.split(" (")[0]
-            
-            # Trouver l'interface correspondante
-            interfaces = get_suitable_interfaces()
-            for interface in interfaces:
-                if interface.name == interface_name:
-                    self._setup_network_modules(interface)
-                    break
             
         except Exception as e:
             self.logger.error(f"Erreur lors du changement d'interface: {e}")
@@ -1544,7 +1534,8 @@ class NetworkControllerMainWindow:
     # Fonctions utilitaires d'interface
     def _update_status(self, message: str):
         """Met à jour la barre de statut"""
-        self.status_var.set(message)
+        if hasattr(self, 'status_var'):
+            self.status_var.set(message)
         self.logger.debug(f"Status: {message}")
     
     def _show_toast_notification(self, title: str, message: str):
