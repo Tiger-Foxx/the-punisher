@@ -1,2 +1,6 @@
 notes.txt
 DESCRIPTION BROUILLON.MD
+app/__pycache__
+app/__pycache__/*
+logs/
+*.log
